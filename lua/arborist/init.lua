@@ -84,27 +84,39 @@ function M.setup(opts)
   })
 
   -- Eagerly scan all buffers at startup (handles `nvim file1 file2 file3`).
-  -- FileType only fires for the active buffer; this ensures background buffers
-  -- get their parsers installed immediately too.
+  -- Background buffers don't have filetype set yet, so detect from filename.
   vim.api.nvim_create_autocmd("VimEnter", {
     group = group,
     once = true,
     callback = function()
       if not registry_ready then return end
+      local seen = {} --- @type table<string, boolean>
       for _, buf in ipairs(vim.api.nvim_list_bufs()) do
         if vim.api.nvim_buf_is_loaded(buf) then
+          local name = vim.api.nvim_buf_get_name(buf)
+          -- Use existing filetype or detect from filename
           local ft = vim.bo[buf].filetype
-          if ft ~= "" then
+          if ft == "" and name ~= "" then
+            ft = vim.filetype.match({ filename = name, buf = buf })
+          end
+          if ft and ft ~= "" then
             local lang = vim.treesitter.language.get_lang(ft)
-            if lang and not install.should_skip(lang) and vim.treesitter.language.add(lang) ~= true then
+            if lang and not seen[lang] and not install.should_skip(lang) and vim.treesitter.language.add(lang) ~= true then
+              seen[lang] = true
               install.install(lang, function(err)
                 if err then return end
                 vim.schedule(function()
-                  -- Enable on all buffers with this filetype
                   for _, b in ipairs(vim.api.nvim_list_bufs()) do
-                    if vim.api.nvim_buf_is_loaded(b) and vim.treesitter.language.get_lang(vim.bo[b].filetype) == lang then
-                      vim.treesitter.language.add(lang)
-                      enable(b)
+                    if vim.api.nvim_buf_is_loaded(b) then
+                      local bft = vim.bo[b].filetype
+                      if bft == "" then
+                        local bname = vim.api.nvim_buf_get_name(b)
+                        if bname ~= "" then bft = vim.filetype.match({ filename = bname, buf = b }) end
+                      end
+                      if bft and vim.treesitter.language.get_lang(bft) == lang then
+                        vim.treesitter.language.add(lang)
+                        enable(b)
+                      end
                     end
                   end
                 end)
