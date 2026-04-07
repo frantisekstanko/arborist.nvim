@@ -47,8 +47,7 @@ All options and their defaults:
    - Clone source and `tree-sitter build` (native .so)
 4. Highlighting and indentation activate immediately
 
-WASM steps are skipped entirely if your Neovim build lacks wasmtime
-(detected once at startup, not trial-and-error).
+WASM steps are skipped entirely if your Neovim build lacks wasmtime.
 
 Parser locations are resolved from a
 [community registry](https://github.com/arborist-ts/registry) covering
