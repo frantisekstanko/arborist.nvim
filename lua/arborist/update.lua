@@ -2,6 +2,7 @@
 
 local lock = require("arborist.lock")
 local log = require("arborist.log")
+local queries = require("arborist.queries")
 local registry = require("arborist.registry")
 
 local M = {}
@@ -63,6 +64,9 @@ function M.update_all(install_fn, repo_cache)
   end
 
   log.info("Checking " .. #langs .. " parsers for updates...")
+
+  -- Refresh enhanced queries alongside parser updates
+  queries.fetch()
 
   local total = #langs
   local checked = 0

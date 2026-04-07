@@ -18,6 +18,7 @@ function M.setup(opts)
   local install = require("arborist.install")
   local lock = require("arborist.lock")
   local log = require("arborist.log")
+  local queries = require("arborist.queries")
   local registry = require("arborist.registry")
   local update = require("arborist.update")
 
@@ -33,6 +34,7 @@ function M.setup(opts)
 
   lock.init(data .. "/arborist-lock.json")
   registry.init(cache_dir)
+  queries.init(cache_dir)
   install.init({ parser = parser_dir, query = query_dir, repo_cache = repo_cache })
 
   -- Ignore list: registry defaults + user additions
@@ -44,6 +46,11 @@ function M.setup(opts)
   vim.fn.mkdir(repo_cache, "p")
 
   registry.load()
+
+  -- Overlay enhanced queries for all installed parsers (fast, synchronous, idempotent)
+  for lang in pairs(lock.read().parsers) do
+    queries.copy(lang, query_dir)
+  end
 
   --- Detect lang for a buffer (uses filetype if set, otherwise matches filename).
   --- @param buf integer
@@ -63,7 +70,8 @@ function M.setup(opts)
   local function ensure_parser(lang)
     if install.should_skip(lang) then return end
     if vim.treesitter.language.add(lang) == true then
-      -- Already available — just enable on any buffer that needs it
+      -- Already available — ensure enhanced queries exist, then enable
+      queries.copy(lang, query_dir)
       for _, buf in ipairs(vim.api.nvim_list_bufs()) do
         if vim.api.nvim_buf_is_loaded(buf) and detect_lang(buf) == lang then
           enable(buf)
@@ -115,6 +123,13 @@ function M.setup(opts)
     desc = "Install a tree-sitter parser",
   })
   vim.api.nvim_create_user_command("ArboristUpdate", function()
+    queries.fetch(function()
+      vim.schedule(function()
+        for lang in pairs(lock.read().parsers) do
+          queries.copy(lang, query_dir)
+        end
+      end)
+    end)
     update.update_all(install.install, repo_cache)
   end, {
     desc = "Update all installed parsers",
@@ -124,8 +139,8 @@ function M.setup(opts)
     for lang in pairs(lock_data.parsers) do
       pcall(os.remove, parser_dir .. "/" .. lang .. ".so")
       pcall(os.remove, parser_dir .. "/" .. lang .. ".wasm")
-      vim.fn.delete(query_dir .. "/" .. lang, "rf")
     end
+    vim.fn.delete(query_dir, "rf")
     vim.fn.delete(cache_dir, "rf")
     vim.fn.delete(data .. "/arborist-lock.json")
     log.info("Cleaned " .. vim.tbl_count(lock_data.parsers) .. " parsers and cache. Restart to re-fetch.")
@@ -133,7 +148,7 @@ function M.setup(opts)
     desc = "Remove all arborist-managed parsers and cache",
   })
 
-  -- Registry: fetch if stale, reload ignore list, scan buffers for missing parsers
+  -- Registry + queries: fetch if stale
   if registry.needs_refresh() then
     registry.fetch(function()
       install.set_ignore(registry.load_ignore())
@@ -150,6 +165,16 @@ function M.setup(opts)
               ensure_parser(lang)
             end
           end
+        end
+      end)
+    end)
+  end
+  if queries.needs_refresh() then
+    queries.fetch(function()
+      -- Overlay enhanced queries for all already-installed parsers
+      vim.schedule(function()
+        for lang in pairs(lock.read().parsers) do
+          queries.copy(lang, query_dir)
         end
       end)
     end)

@@ -34,6 +34,7 @@ All options and their defaults:
 | `prefer_wasm` | `true` | Try WASM before native compilation |
 | `update_cadence` | `"daily"` | `"daily"`, `"weekly"`, or `"manual"` |
 | `compiler` | `"cc"` | C compiler for native .so builds |
+| `queries_url` | `"https://github.com/arborist-ts/queries.git"` | Git URL for enhanced queries repo |
 | `ignore` | `{}` | Extra filetypes to skip (merged with registry defaults) |
 | `overrides` | `{}` | Extra parsers not in the registry |
 
@@ -45,7 +46,9 @@ All options and their defaults:
    - Download pre-built WASM from CDN (fastest)
    - Clone source and `tree-sitter build --wasm`
    - Clone source and `tree-sitter build` (native .so)
-4. Highlighting and indentation activate immediately
+4. Enhanced [query files](https://github.com/arborist-ts/queries) (highlights,
+   folds, indents, injections) are overlaid automatically
+5. Highlighting and indentation activate immediately
 
 WASM steps are skipped entirely if your Neovim build lacks wasmtime.
 
@@ -54,6 +57,11 @@ Parser locations are resolved from a
 326 parsers. Unknown parsers fall back to convention-based lookup in the
 `tree-sitter-grammars` and `tree-sitter` GitHub orgs.
 
+Query files from parser repos are supplemented with community-curated
+[enhanced queries](https://github.com/arborist-ts/queries) for richer
+syntax highlighting, folding, and indentation. User queries in
+`~/.config/nvim/queries/` always take highest priority.
+
 ## Commands
 
 | Command | Description |
@@ -61,6 +69,7 @@ Parser locations are resolved from a
 | `:Arborist` | Show installed parsers and status |
 | `:ArboristInstall {lang}` | Install a parser manually |
 | `:ArboristUpdate` | Check all parsers for updates |
+| `:ArboristClean` | Remove all arborist-managed parsers and cache |
 
 ## Requirements
 

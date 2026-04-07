@@ -9,6 +9,7 @@ local config = require("arborist.config")
 local compile = require("arborist.compile")
 local lock = require("arborist.lock")
 local log = require("arborist.log")
+local queries = require("arborist.queries")
 local registry = require("arborist.registry")
 
 local M = {}
@@ -136,8 +137,11 @@ function M.install(lang, callback, opts)
       finish("no parser source found for " .. lang)
       return
     end
-    -- Install queries on main thread
-    vim.schedule(function() compile.copy_queries(repo, lang, info, query_dir) end)
+    -- Install queries on main thread: parser-repo baseline, then enhanced overlay
+    vim.schedule(function()
+      compile.copy_queries(repo, lang, info, query_dir)
+      queries.copy(lang, query_dir)
+    end)
 
     if try_wasm then
       compile.build_wasm(repo, info, parser_dir .. "/" .. lang .. ".wasm", function(werr)
@@ -164,6 +168,7 @@ function M.install(lang, callback, opts)
     if try_wasm and wasm_cdn_ok then
       vim.schedule(function()
         if repo then compile.copy_queries(repo, lang, info, query_dir) end
+        queries.copy(lang, query_dir)
         finish(nil, "wasm-cdn")
       end)
     else

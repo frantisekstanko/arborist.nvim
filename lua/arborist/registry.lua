@@ -181,7 +181,7 @@ function M.fetch(callback)
   end
 end
 
---- Check if the cached registry is missing or older than 7 days.
+--- Check if the cached registry is missing or older than 1 day.
 --- @return boolean
 function M.needs_refresh()
   local stat = vim.uv.fs_stat(cache_dir .. "/parsers.toml")
