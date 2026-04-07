@@ -94,22 +94,13 @@ function M.setup(opts)
     end,
   })
 
-  -- Eagerly scan all buffers at startup (handles `nvim file1 file2 file3`).
-  -- Background buffers don't have filetype set yet, so detect from filename.
-  vim.api.nvim_create_autocmd("VimEnter", {
+  -- Install parsers for background buffers as they load.
+  -- FileType only fires for the active buffer; BufReadPost fires for all.
+  vim.api.nvim_create_autocmd("BufReadPost", {
     group = group,
-    once = true,
-    callback = function()
-      local seen = {} --- @type table<string, boolean>
-      for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-        if vim.api.nvim_buf_is_loaded(buf) then
-          local lang = detect_lang(buf)
-          if lang and not seen[lang] then
-            seen[lang] = true
-            ensure_parser(lang)
-          end
-        end
-      end
+    callback = function(ev)
+      local lang = detect_lang(ev.buf)
+      if lang then ensure_parser(lang) end
     end,
   })
 
