@@ -133,8 +133,8 @@ overrides ~
 
                                                               *:Arborist*
 :Arborist
-    Show installed parsers with their install mode (wasm-cdn, wasm-built,
-    native) and install date. Also shows WASM support status, update cadence,
+    Show installed parsers with their install mode (wasm-built, native)
+    and install date. Also shows WASM support status, update cadence,
     and last update time.
 
                                                         *:ArboristInstall*
@@ -183,7 +183,7 @@ Run `:checkhealth arborist` to verify your setup. The health check reports:
 
   - Neovim version (0.12+ required)
   - WASM support (wasmtime)
-  - External tools: `git`, `curl`, `tree-sitter` CLI, C compiler
+  - External tools: `git`, `tree-sitter` CLI, C compiler
   - Bundled registry and query data integrity
   - Number of installed parsers
 

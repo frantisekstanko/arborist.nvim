@@ -2,6 +2,43 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.3.0 — 2026-04-11
+
+### Added
+- Bundled registry (327 parsers) and queries (330 languages) ship with the
+  plugin — no runtime fetching needed. Data is sourced from
+  [arborist-ts/registry](https://github.com/arborist-ts/registry) and
+  [arborist-ts/queries](https://github.com/arborist-ts/queries)
+- New `install_popular` option (default: `true`): eagerly installs parsers
+  for common languages at startup
+- New `ensure_installed` option: additional parsers to install at startup
+- Custom tree-sitter query predicates for better indent support
+- Health check via `:checkhealth arborist`
+- Neovim help file (`:help arborist`)
+
+### Changed
+- Install chain now builds from source instead of downloading from CDN —
+  eliminates incompatible WASM format issues and orphaned parser files
+- Batch installs group parsers by repo URL: each repo clones once, parsers
+  sharing a repo (e.g. typescript + tsx) build sequentially, different repos
+  clone in parallel
+- WASM support detected lazily on first install instead of at startup
+- Built WASM parsers are verified at load time with automatic native fallback
+- Build/clone errors now include command stderr for diagnostics
+
+### Fixed
+- WASM CDN parser format (dylink section) incompatible with Neovim's
+  wasmtime, causing crashes on startup ([#3](https://github.com/arborist-ts/arborist.nvim/issues/3))
+- Race condition: concurrent mono-repo clones (e.g. typescript + tsx) could
+  return incomplete clone paths
+- `vim.treesitter.language.add()` can throw on broken parser files, crashing
+  setup — all calls now wrapped in pcall
+- Incomplete clones and missing source directories now handled gracefully
+
+### Removed
+- WASM CDN download path (`wasm_url` config option, `curl` dependency)
+- `registry_url` and `queries_url` config options (data is bundled)
+
 ## 0.2.0 — 2026-04-07
 
 - Enhanced queries: community-curated highlights, folds, indents, and injections

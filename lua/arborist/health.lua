@@ -24,7 +24,7 @@ function M.check()
   end
 
   -- External tools
-  for _, tool in ipairs({ "git", "curl" }) do
+  for _, tool in ipairs({ "git" }) do
     if vim.fn.executable(tool) == 1 then
       vim.health.ok(tool .. " found")
     else

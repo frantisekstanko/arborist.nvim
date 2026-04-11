@@ -62,20 +62,41 @@ the rest.
 
 1. You open a file
 2. Arborist checks if a parser exists for that filetype
-3. If not, it installs one:
-   - Download pre-built WASM from CDN (fastest)
-   - Clone source and `tree-sitter build --wasm`
-   - Clone source and `tree-sitter build` (native .so)
+3. If not, it clones the source and builds one:
+   - `tree-sitter build --wasm` (sandboxed, preferred)
+   - `tree-sitter build` (native .so)
+   - `cc` compilation (fallback)
 4. Highlighting and indentation activate immediately
 
-WASM steps are skipped entirely if your Neovim build lacks wasmtime.
+WASM builds are verified at load time — if the parser fails to load,
+arborist falls through to native compilation automatically. WASM is
+skipped entirely if your Neovim build lacks wasmtime.
 
-Parser locations are resolved from a
-[community registry](https://github.com/arborist-ts/registry) covering
-326 parsers. Unknown parsers fall back to convention-based lookup in the
+Parser locations are resolved from a bundled
+[community registry](https://github.com/arborist-ts/registry) of 327
+parsers. Unknown parsers fall back to convention-based lookup in the
 `tree-sitter-grammars` and `tree-sitter` GitHub orgs.
 
+Batch installs group parsers by repository — parsers sharing a repo
+(e.g. typescript + tsx) clone once and build sequentially, while
+different repos clone in parallel.
+
 User queries in `~/.config/nvim/queries/` always take highest priority.
+
+## Data Sources
+
+Arborist bundles data from two companion repos so it works offline and
+ships cohesive versions:
+
+| Data | Source | Bundled in |
+|------|--------|------------|
+| Parser registry (327 parsers) | [arborist-ts/registry](https://github.com/arborist-ts/registry) | `registry/` |
+| Query files (330 languages) | [arborist-ts/queries](https://github.com/arborist-ts/queries) | `queries/` |
+
+Changes flow **upstream first**: updates are made in the source repos,
+then synced into arborist.nvim before each release via
+`scripts/sync-upstream.sh`. This keeps the upstream repos canonical and
+arborist.nvim releases self-contained.
 
 ## Commands
 
@@ -90,7 +111,7 @@ User queries in `~/.config/nvim/queries/` always take highest priority.
 ## Requirements
 
 - Neovim 0.12+
-- `git` and `curl`
+- `git`
 - `tree-sitter` CLI (for building from source)
 - A C compiler (fallback when `tree-sitter` CLI is unavailable)
 - For WASM: Neovim built with `ENABLE_WASMTIME=ON`
