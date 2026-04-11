@@ -111,7 +111,7 @@ function M.install(lang, callback, opts)
     end
     if mode then
       lock.record(lang, mode)
-      log.info("Installed: " .. lang .. " (" .. mode .. ")")
+      if not opts.silent then log.info("Installed: " .. lang .. " (" .. mode .. ")") end
     elseif not opts.silent then
       log.warn(err or "unknown error installing " .. lang)
     end

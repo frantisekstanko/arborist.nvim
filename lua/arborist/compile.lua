@@ -128,12 +128,11 @@ function M.download_wasm(lang, dest, callback)
   end)
 end
 
---- Resolve the grammar root directory. Nukes corrupt clones so next attempt re-clones.
---- @return string? base  nil if clone is incomplete
+--- Resolve the grammar root directory.
+--- @return string? base  nil if location subdirectory doesn't exist
 local function resolve_base(repo_path, info)
   local base = info.location and (repo_path .. "/" .. info.location) or repo_path
   if vim.uv.fs_stat(base) then return base end
-  rm_rf(repo_path)
   return nil
 end
 

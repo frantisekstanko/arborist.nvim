@@ -92,6 +92,76 @@ function M.setup(opts)
     end, { silent = true })
   end
 
+  -- Batch install: build the list, then install once registry is ready.
+  local function batch_install()
+    local to_install = {}
+    if config.values.install_popular then
+      vim.list_extend(to_install, {
+        "bash", "c", "cpp", "css", "diff", "dockerfile", "go", "html",
+        "ini", "java", "javascript", "json", "latex", "lua", "make",
+        "markdown", "markdown_inline", "python", "regex", "ruby", "rust",
+        "toml", "tsx", "typescript", "vim", "vimdoc", "xml", "yaml",
+      })
+    end
+    vim.list_extend(to_install, config.values.ensure_installed)
+
+    local needed = {}
+    for _, lang in ipairs(to_install) do
+      if install.should_skip(lang) then
+        -- skip
+      elseif vim.treesitter.language.add(lang) == true then
+        for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+          if vim.api.nvim_buf_is_loaded(buf) and detect_lang(buf) == lang then
+            enable(buf)
+          end
+        end
+      else
+        needed[#needed + 1] = lang
+      end
+    end
+
+    if #needed == 0 then return end
+    log.info("Installing parsers...")
+    local done, failed = 0, {}
+    for _, lang in ipairs(needed) do
+      install.install(lang, function(err)
+        done = done + 1
+        if err then failed[#failed + 1] = lang .. " (" .. err .. ")" end
+        if done == #needed then
+          if #failed == 0 then
+            log.info("Parser installation complete")
+          else
+            log.warn("Failed: " .. table.concat(failed, ", "))
+          end
+          vim.schedule(function()
+            for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+              if vim.api.nvim_buf_is_loaded(buf) then
+                local blang = detect_lang(buf)
+                if blang then
+                  vim.treesitter.language.add(blang)
+                  enable(buf)
+                end
+              end
+            end
+          end)
+        end
+      end, { silent = true })
+    end
+  end
+
+  -- Ensure registry is loaded before batch install (monorepo parsers need
+  -- location info from the registry). If cached, this is instant. If not
+  -- (first run or after ArboristClean), fetch first then install.
+  if registry.load() then
+    batch_install()
+  elseif registry.needs_refresh() then
+    registry.fetch(function()
+      install.set_ignore(registry.load_ignore())
+      install.set_ignore(config.values.ignore)
+      vim.schedule(batch_install)
+    end)
+  end
+
   -- Auto-detect: install missing parsers on FileType
   local group = vim.api.nvim_create_augroup("arborist", { clear = true })
   vim.api.nvim_create_autocmd("FileType", {
@@ -141,25 +211,11 @@ function M.setup(opts)
     desc = "Remove all arborist-managed parsers and cache",
   })
 
-  -- Registry: fetch if stale
+  -- Refresh stale registry (if not already fetched above for batch install)
   if registry.needs_refresh() then
     registry.fetch(function()
       install.set_ignore(registry.load_ignore())
       install.set_ignore(config.values.ignore)
-      -- Scan all buffers — parsers that failed heuristic resolution
-      -- may now succeed with the freshly loaded registry
-      vim.schedule(function()
-        local seen = {}
-        for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-          if vim.api.nvim_buf_is_loaded(buf) then
-            local lang = detect_lang(buf)
-            if lang and not seen[lang] then
-              seen[lang] = true
-              ensure_parser(lang)
-            end
-          end
-        end
-      end)
     end)
   end
   -- Cadence-based auto-update

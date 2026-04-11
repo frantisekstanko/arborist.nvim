@@ -34,8 +34,29 @@ All options and their defaults:
 | `prefer_wasm` | `true` | Try WASM before native compilation |
 | `update_cadence` | `"daily"` | `"daily"`, `"weekly"`, or `"manual"` |
 | `compiler` | `"cc"` | C compiler for native .so builds |
+| `install_popular` | `true` | Install popular language parsers at startup |
+| `ensure_installed` | `{}` | Additional parsers to install eagerly at startup |
 | `ignore` | `{}` | Extra filetypes to skip (merged with registry defaults) |
 | `overrides` | `{}` | Extra parsers not in the registry |
+
+## Parsers and Queries
+
+Arborist takes a two-pronged approach so everything works out of the box:
+
+**Queries for 330 languages** are bundled with arborist.nvim, providing
+syntax highlighting, folds, indents, and injections for every language
+Neovim supports — no parser needed yet.
+
+**Parsers for common languages** are installed eagerly at startup when
+`install_popular` is enabled (the default). This covers the most popular
+programming languages, common config/data formats (JSON, YAML, TOML, XML,
+INI, Dockerfile, Makefile), and parsers needed by popular plugins like
+[render-markdown.nvim](https://github.com/MeanderingProgrammer/render-markdown.nvim)
+(markdown, markdown_inline, html, latex). Set `install_popular = false`
+to disable. Use `ensure_installed` to add parsers beyond the popular set.
+
+**Everything else** installs on demand — open a file and arborist handles
+the rest.
 
 ## How It Works
 
@@ -54,8 +75,6 @@ Parser locations are resolved from a
 326 parsers. Unknown parsers fall back to convention-based lookup in the
 `tree-sitter-grammars` and `tree-sitter` GitHub orgs.
 
-Query files for 330 languages are bundled with arborist.nvim, providing
-syntax highlighting, folding, indentation, and injections out of the box.
 User queries in `~/.config/nvim/queries/` always take highest priority.
 
 ## Commands

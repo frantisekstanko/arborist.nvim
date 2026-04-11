@@ -8,6 +8,8 @@
 --- @field compiler string C compiler for native .so builds
 --- @field wasm_url string CDN URL pattern for pre-built WASM parsers (%s = lang name)
 --- @field registry_url string Base URL for the registry repo (raw file access)
+--- @field install_popular boolean Install popular language parsers at startup
+--- @field ensure_installed string[] Additional parsers to install eagerly at startup
 --- @field ignore string[] Extra filetypes to ignore (merged with registry defaults)
 --- @field overrides table<string, {url: string, location?: string}> Extra parser overrides
 
@@ -18,6 +20,12 @@ local defaults = {
   compiler = vim.env.CC or "cc",
   wasm_url = "https://unpkg.com/tree-sitter-wasms@latest/out/tree-sitter-%s.wasm",
   registry_url = "https://raw.githubusercontent.com/arborist-ts/registry/main",
+  -- Install popular parsers at startup. Covers the most popular programming
+  -- languages, common config formats, and parsers needed by popular plugins
+  -- like render-markdown.nvim. Set to false to disable.
+  install_popular = true,
+  -- Additional parsers to install eagerly at startup (beyond the popular set).
+  ensure_installed = {},
   ignore = {},
   overrides = {},
 }
