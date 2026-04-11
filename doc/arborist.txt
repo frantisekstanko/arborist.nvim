@@ -1,0 +1,246 @@
+*arborist.txt*	WASM-first tree-sitter parser manager for Neovim 0.12+
+
+Author: Stephen Waits
+License: MIT
+
+==============================================================================
+CONTENTS                                                   *arborist-contents*
+
+  1. Introduction ......................................... |arborist|
+  2. Setup ................................................ |arborist-setup|
+  3. Options .............................................. |arborist-options|
+  4. Commands ............................................. |arborist-commands|
+  5. Lua API .............................................. |arborist-api|
+  6. How it works ......................................... |arborist-how-it-works|
+  7. Data sources ......................................... |arborist-data-sources|
+  8. Requirements ......................................... |arborist-requirements|
+
+==============================================================================
+1. INTRODUCTION                                                    *arborist*
+
+Arborist manages tree-sitter parsers so you don't have to. Parsers install
+automatically when you open files. Queries for 330 languages and a registry
+of 327 parsers are bundled with the plugin — no runtime downloads needed
+for parser resolution.
+
+Common language parsers are installed eagerly at startup. Everything else
+installs on demand.
+
+==============================================================================
+2. SETUP                                                     *arborist-setup*
+
+Works out of the box with no setup call: >lua
+
+    vim.pack.add({
+      "https://github.com/arborist-ts/arborist.nvim",
+    })
+<
+To customize options: >lua
+
+    vim.g.arborist_loaded = true -- skip auto-setup
+    require("arborist").setup({
+      update_cadence = "weekly",
+      overrides = {
+        my_language = {
+          url = "https://github.com/me/tree-sitter-my-language",
+        },
+      },
+    })
+<
+                                                      *arborist.setup()*
+arborist.setup({opts})
+    Configure and start arborist. Safe to call multiple times (idempotent).
+    See |arborist-options| for available fields.
+
+==============================================================================
+3. OPTIONS                                                 *arborist-options*
+
+Options are passed to |arborist.setup()| or use their defaults automatically.
+
+                                                    *arborist.prefer_wasm*
+prefer_wasm ~
+    Type: `boolean`, Default: `true`
+
+    Try WASM before native compilation. When enabled, arborist first attempts
+    to download a pre-built WASM parser from CDN, then tries building WASM
+    from source, and only falls back to native .so compilation as a last
+    resort.
+
+                                                  *arborist.update_cadence*
+update_cadence ~
+    Type: `string`, Default: `"daily"`
+
+    How often to auto-update installed parsers. Valid values:
+    `"daily"`, `"weekly"`, `"manual"`.
+
+    When set to `"manual"`, parsers are only updated via |:ArboristUpdate|.
+
+                                                      *arborist.compiler*
+compiler ~
+    Type: `string`, Default: `vim.env.CC` or `"cc"`
+
+    C compiler used for native .so builds when the `tree-sitter` CLI is
+    unavailable.
+
+                                                  *arborist.install_popular*
+install_popular ~
+    Type: `boolean`, Default: `true`
+
+    Install parsers for common languages eagerly at startup. Covers popular
+    programming languages (c, python, rust, go, javascript, typescript, ...),
+    config formats (json, yaml, toml, xml, ini, dockerfile, make), and
+    parsers needed by popular plugins like render-markdown.nvim (markdown,
+    markdown_inline, html, latex).
+
+    Set to `false` to disable eager installation.
+
+                                                *arborist.ensure_installed*
+ensure_installed ~
+    Type: `string[]`, Default: `{}`
+
+    Additional parsers to install eagerly at startup, beyond the popular set.
+    >lua
+        require("arborist").setup({
+          ensure_installed = { "zig", "elixir", "haskell" },
+        })
+<
+                                                        *arborist.ignore*
+ignore ~
+    Type: `string[]`, Default: `{}`
+
+    Extra filetypes to skip. Merged with the default ignore list from the
+    bundled registry (UI elements, plugin buffers, etc.).
+
+                                                     *arborist.overrides*
+overrides ~
+    Type: `table<string, {url: string, location?: string}>`, Default: `{}`
+
+    Custom parser definitions. These take priority over the bundled registry.
+    Use `location` for mono-repos where the grammar is in a subdirectory.
+    >lua
+        require("arborist").setup({
+          overrides = {
+            my_lang = { url = "https://github.com/me/tree-sitter-my-lang" },
+            apex = {
+              url = "https://github.com/aheber/tree-sitter-sfapex",
+              location = "apex",
+            },
+          },
+        })
+<
+==============================================================================
+4. COMMANDS                                               *arborist-commands*
+
+                                                              *:Arborist*
+:Arborist
+    Show installed parsers with their install mode (wasm-cdn, wasm-built,
+    native) and install date. Also shows WASM support status, update cadence,
+    and last update time.
+
+                                                        *:ArboristInstall*
+:ArboristInstall {lang}
+    Install a parser for {lang}. Uses the same fallback chain as automatic
+    installation: WASM CDN, WASM build, native build.
+
+                                                         *:ArboristUpdate*
+:ArboristUpdate
+    Check all installed parsers for upstream changes. Only parsers with new
+    commits are reinstalled.
+
+                                                          *:ArboristClean*
+:ArboristClean
+    Remove all arborist-managed parsers, installed query files, cached repo
+    clones, and the lock file. Restart Neovim to reinstall.
+
+==============================================================================
+5. LUA API                                                    *arborist-api*
+
+                                                      *arborist.install()*
+arborist.install({lang}, {callback?})
+    Install a parser programmatically.
+
+    Parameters: ~
+      - {lang}      `string`  Language name (e.g. "python")
+      - {callback}  `fun(err: string?)?`  Called on completion
+
+    Example: >lua
+        require("arborist").install("zig", function(err)
+          if err then print("failed: " .. err) end
+        end)
+<
+                                                       *arborist.update()*
+arborist.update()
+    Update all installed parsers. Equivalent to |:ArboristUpdate|.
+
+                                                       *arborist.status()*
+arborist.status()
+    Print installed parser status. Equivalent to |:Arborist|.
+
+==============================================================================
+6. HOW IT WORKS                                       *arborist-how-it-works*
+
+Install chain ~
+
+When a parser is needed, arborist tries each method in order:
+
+  1. Download pre-built WASM from CDN (fastest, no compilation)
+  2. Clone source and run `tree-sitter build --wasm`
+  3. Clone source and run `tree-sitter build` (native .so)
+  4. Fail silently and add to ignore list
+
+Steps 1-2 are skipped if Neovim lacks wasmtime support, which arborist
+detects automatically at startup.
+
+Parser resolution ~
+
+Parser locations are resolved in this order:
+
+  1. User |arborist.overrides|
+  2. Bundled registry (327 parsers)
+  3. Convention-based fallback: tries `tree-sitter-grammars/tree-sitter-{lang}`
+     then `tree-sitter/tree-sitter-{lang}` on GitHub
+
+Query priority ~
+
+Query files (.scm) are loaded in standard Neovim priority order:
+
+  1. User queries in `~/.config/nvim/queries/{lang}/`
+  2. Bundled arborist queries (330 languages)
+  3. Parser-repo queries (copied during installation)
+
+Auto-detection ~
+
+Arborist listens for |FileType| and |BufReadPost| events. When a buffer's
+filetype maps to a language without an installed parser, installation starts
+automatically in the background.
+
+==============================================================================
+7. DATA SOURCES                                       *arborist-data-sources*
+
+Arborist bundles data from two companion repositories:
+
+  Registry (327 parsers):
+    Source: https://github.com/arborist-ts/registry
+    Bundled in: `registry/`
+
+  Queries (330 languages):
+    Source: https://github.com/arborist-ts/queries
+    Bundled in: `queries/`
+
+Changes flow upstream first: updates are made in the source repos, then
+synced into arborist.nvim before each release via `scripts/sync-upstream.sh`.
+This keeps the upstream repos canonical and arborist.nvim releases
+self-contained.
+
+==============================================================================
+8. REQUIREMENTS                                       *arborist-requirements*
+
+  - Neovim 0.12+
+  - `git` (for cloning parser source repos)
+  - `curl` (for WASM CDN downloads)
+  - `tree-sitter` CLI (for building parsers from source)
+  - A C compiler (fallback when `tree-sitter` CLI is unavailable)
+  - For WASM: Neovim built with `ENABLE_WASMTIME=ON`
+
+==============================================================================
+ vim:tw=78:ts=8:ft=help:norl:
