@@ -34,14 +34,11 @@ function M.setup(opts)
 
   -- Paths
   local data = vim.fn.stdpath("data")
-  local cache = vim.fn.stdpath("cache")
   local parser_dir = data .. "/site/parser"
   local query_dir = data .. "/site/queries"
-  local repo_cache = cache .. "/arborist/repos"
-  local cache_dir = cache .. "/arborist"
+  local repo_cache = vim.fn.stdpath("cache") .. "/arborist/repos"
 
   lock.init(data .. "/arborist-lock.json")
-  registry.init(cache_dir)
   install.init({ parser = parser_dir, query = query_dir, repo_cache = repo_cache })
 
   -- Ignore list: registry defaults + user additions
@@ -149,18 +146,7 @@ function M.setup(opts)
     end
   end
 
-  -- Ensure registry is loaded before batch install (monorepo parsers need
-  -- location info from the registry). If cached, this is instant. If not
-  -- (first run or after ArboristClean), fetch first then install.
-  if registry.load() then
-    batch_install()
-  elseif registry.needs_refresh() then
-    registry.fetch(function()
-      install.set_ignore(registry.load_ignore())
-      install.set_ignore(config.values.ignore)
-      vim.schedule(batch_install)
-    end)
-  end
+  batch_install()
 
   -- Auto-detect: install missing parsers on FileType
   local group = vim.api.nvim_create_augroup("arborist", { clear = true })
@@ -204,20 +190,13 @@ function M.setup(opts)
       pcall(os.remove, parser_dir .. "/" .. lang .. ".wasm")
     end
     vim.fn.delete(query_dir, "rf")
-    vim.fn.delete(cache_dir, "rf")
+    vim.fn.delete(repo_cache, "rf")
     vim.fn.delete(data .. "/arborist-lock.json")
-    log.info("Cleaned " .. vim.tbl_count(lock_data.parsers) .. " parsers and cache. Restart to re-fetch.")
+    log.info("Cleaned " .. vim.tbl_count(lock_data.parsers) .. " parsers. Restart to reinstall.")
   end, {
-    desc = "Remove all arborist-managed parsers and cache",
+    desc = "Remove all arborist-managed parsers",
   })
 
-  -- Refresh stale registry (if not already fetched above for batch install)
-  if registry.needs_refresh() then
-    registry.fetch(function()
-      install.set_ignore(registry.load_ignore())
-      install.set_ignore(config.values.ignore)
-    end)
-  end
   -- Cadence-based auto-update
   if update.due(config.values.update_cadence) then
     update.update_all(install.install, repo_cache)

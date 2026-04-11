@@ -166,25 +166,10 @@ function M.install(lang, callback, opts)
     end
   end
 
-  -- Operation 1: Clone repo (with registry fallback on failure)
+  -- Operation 1: Clone repo
   compile.clone_repo(info, repo_cache, function(err, path)
-    if not err then
-      repo = path
-      check_done()
-      return
-    end
-    -- Heuristic failed — try registry for custom-org parsers
-    registry.resolve_async(lang, function(reg_info)
-      if reg_info then
-        info = reg_info
-        compile.clone_repo(reg_info, repo_cache, function(_, reg_path)
-          repo = reg_path
-          check_done()
-        end)
-      else
-        check_done() -- repo stays nil → will fail in build_from_repo
-      end
-    end)
+    if not err then repo = path end
+    check_done()
   end)
 
   -- Operation 2: WASM CDN download (parallel with clone)

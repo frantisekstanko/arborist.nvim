@@ -1,7 +1,8 @@
---- Parser registry: fetch, cache, resolve, register filetypes.
---- All data comes from the registry repo — the plugin has zero hardcoded parser data.
+--- Parser registry: load bundled data, resolve parser URLs, register filetypes.
+--- Registry data is bundled with the plugin in the registry/ directory.
+--- Sourced from the arborist-ts/registry repo via scripts/sync-upstream.sh.
 ---
---- Cache directory contains three files fetched from the registry repo:
+--- Files:
 ---   parsers.toml    — parser name → { url, location? }
 ---   filetypes.toml  — parser name → [filetype aliases]  (Neovim-specific)
 ---   ignore.toml     — filetypes to skip                  (Neovim-specific)
@@ -21,15 +22,8 @@ local M = {}
 --- @type table<string, arborist.ParserInfo>?
 local entries = nil
 
---- @type string
-local cache_dir
-
-local fetching = false
-local fetch_queue = {} --- @type fun(ok: boolean)[]  Callbacks waiting on in-flight fetch
+local registry_dir = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":h:h:h") .. "/registry"
 local filetypes_registered = false
-
---- @param dir string
-function M.init(dir) cache_dir = dir end
 
 -- Minimal TOML readers for our exact registry format.
 
@@ -96,7 +90,7 @@ end
 --- Register filetype → parser mappings with Neovim. Idempotent.
 function M.register_filetypes()
   if filetypes_registered then return end
-  local ft_map = read_filetypes(cache_dir .. "/filetypes.toml")
+  local ft_map = read_filetypes(registry_dir .. "/filetypes.toml")
   if not next(ft_map) then return end
   filetypes_registered = true
   for lang, fts in pairs(ft_map) do
@@ -104,17 +98,17 @@ function M.register_filetypes()
   end
 end
 
---- Load default ignore list from cached ignore.toml.
+--- Load default ignore list from bundled ignore.toml.
 --- @return string[]
 function M.load_ignore()
-  return read_ignore(cache_dir .. "/ignore.toml")
+  return read_ignore(registry_dir .. "/ignore.toml")
 end
 
---- Load cached parser registry from disk. Registers filetypes if found.
+--- Load bundled parser registry. Registers filetypes if found.
 --- @return boolean loaded
 function M.load()
   if entries then return true end
-  entries = read_parsers(cache_dir .. "/parsers.toml")
+  entries = read_parsers(registry_dir .. "/parsers.toml")
   if entries then
     M.register_filetypes()
     return true
@@ -122,75 +116,8 @@ function M.load()
   return false
 end
 
---- Fetch all registry files from remote and cache them.
---- Safe to call concurrently — queues callbacks behind a single in-flight fetch.
---- @param callback? fun(ok: boolean)
-function M.fetch(callback)
-  if callback then fetch_queue[#fetch_queue + 1] = callback end
-
-  if fetching then return end
-  fetching = true
-
-  local base = config.values.registry_url
-  local files = {
-    { url = base .. "/parsers.toml", dest = cache_dir .. "/parsers.toml" },
-    { url = base .. "/neovim-filetypes.toml", dest = cache_dir .. "/filetypes.toml" },
-    { url = base .. "/neovim-ignore.toml", dest = cache_dir .. "/ignore.toml" },
-  }
-  local remaining = #files
-  local all_ok = true
-
-  local function finish_fetch()
-    remaining = remaining - 1
-    if remaining > 0 then return end
-    fetching = false
-
-    if all_ok then
-      local parsed = read_parsers(cache_dir .. "/parsers.toml")
-      if parsed then
-        entries = parsed
-        filetypes_registered = false
-        vim.schedule(M.register_filetypes)
-      end
-    end
-
-    local cbs = fetch_queue
-    fetch_queue = {}
-    for _, cb in ipairs(cbs) do cb(all_ok) end
-  end
-
-  vim.uv.fs_mkdir(cache_dir, 493) -- 0755, no-op if exists
-  for _, file in ipairs(files) do
-    local tmp = os.tmpname()
-    vim.system({ "curl", "-fsSL", "-o", tmp, file.url }, {}, function(r)
-      if r.code == 0 then
-        -- Copy to destination (can't rename across filesystems)
-        local src = io.open(tmp, "r")
-        if src then
-          local data = src:read("*a")
-          src:close()
-          local dst = io.open(file.dest, "w")
-          if dst then dst:write(data); dst:close() end
-        end
-      else
-        all_ok = false
-      end
-      pcall(os.remove, tmp)
-      finish_fetch()
-    end)
-  end
-end
-
---- Check if the cached registry is missing or older than 1 day.
---- @return boolean
-function M.needs_refresh()
-  local stat = vim.uv.fs_stat(cache_dir .. "/parsers.toml")
-  if not stat then return true end
-  return os.difftime(os.time(), stat.mtime.sec) / 86400 > 1
-end
-
 --- Resolve a language to parser info.
---- Priority: user overrides → cached registry → heuristic.
+--- Priority: user overrides → bundled registry → heuristic.
 --- @param lang string
 --- @return arborist.ParserInfo
 function M.resolve(lang)
@@ -206,25 +133,6 @@ function M.resolve(lang)
     url = "https://github.com/tree-sitter-grammars/tree-sitter-" .. hyphenated,
     fallback_url = "https://github.com/tree-sitter/tree-sitter-" .. hyphenated,
   }
-end
-
---- Resolve with async registry fetch fallback.
---- Called when heuristic clone fails — fetches registry and retries lookup.
---- @param lang string
---- @param callback fun(info: arborist.ParserInfo?)
-function M.resolve_async(lang, callback)
-  M.load()
-  if entries and entries[lang] then
-    callback(entries[lang])
-    return
-  end
-  M.fetch(function(ok)
-    if ok and entries and entries[lang] then
-      callback(entries[lang])
-    else
-      callback(nil)
-    end
-  end)
 end
 
 return M
