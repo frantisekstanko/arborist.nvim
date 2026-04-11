@@ -123,10 +123,26 @@ function M.install(lang, callback, opts)
       compile.copy_queries(repo, lang, info, query_dir)
     end)
 
-    if try_wasm then
-      compile.build_wasm(repo, info, parser_dir .. "/" .. lang .. ".wasm", function(werr)
+    if try_wasm and M.wasm_supported ~= false then
+      local wasm_path = parser_dir .. "/" .. lang .. ".wasm"
+      compile.build_wasm(repo, info, wasm_path, function(werr)
         if not werr then
-          finish(nil, "wasm-built")
+          vim.schedule(function()
+            local lok, _, lerr = pcall(vim.treesitter.language.add, lang, { path = wasm_path })
+            if lok and lerr == nil then
+              M.wasm_supported = true
+              finish(nil, "wasm-built")
+            else
+              pcall(os.remove, wasm_path)
+              if M.wasm_supported == nil then
+                M.wasm_supported = false
+                log.info("WASM parsers not supported by this Neovim build, using native compilation")
+              end
+              try_native(repo, lang, info, function(nerr)
+                finish(nerr, nerr and nil or "native")
+              end)
+            end
+          end)
         else
           try_native(repo, lang, info, function(nerr)
             finish(nerr, nerr and nil or "native")
@@ -145,12 +161,27 @@ function M.install(lang, callback, opts)
     remaining = remaining - 1
     if remaining > 0 then return end
 
-    if try_wasm and wasm_cdn_ok then
+    if try_wasm and wasm_cdn_ok and M.wasm_supported ~= false then
       vim.schedule(function()
         if repo then compile.copy_queries(repo, lang, info, query_dir) end
-        finish(nil, "wasm-cdn")
+        local wasm_path = parser_dir .. "/" .. lang .. ".wasm"
+        local lok, _, lerr = pcall(vim.treesitter.language.add, lang, { path = wasm_path })
+        if lok and lerr == nil then
+          M.wasm_supported = true
+          finish(nil, "wasm-cdn")
+        else
+          -- CDN wasm format may be incompatible even when Neovim supports wasm.
+          -- Don't disable wasm — fall back to building from source instead.
+          pcall(os.remove, wasm_path)
+          build_from_repo()
+        end
       end)
     else
+      -- Clean up any CDN wasm left on disk (concurrent install may have
+      -- set wasm_supported=false while our download was in-flight).
+      if wasm_cdn_ok then
+        pcall(os.remove, parser_dir .. "/" .. lang .. ".wasm")
+      end
       build_from_repo()
     end
   end
