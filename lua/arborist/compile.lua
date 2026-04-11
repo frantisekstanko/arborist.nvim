@@ -6,6 +6,35 @@ local config = require("arborist.config")
 
 local M = {}
 
+--- Recursively remove a directory. Safe from any thread (pure Lua + uv).
+--- @param path string
+local function rm_rf(path)
+  local stat = vim.uv.fs_stat(path)
+  if not stat then return end
+  if stat.type == "directory" then
+    local handle = vim.uv.fs_scandir(path)
+    if handle then
+      while true do
+        local name, t = vim.uv.fs_scandir_next(handle)
+        if not name then break end
+        local child = path .. "/" .. name
+        if t == "directory" then rm_rf(child) else vim.uv.fs_unlink(child) end
+      end
+    end
+    vim.uv.fs_rmdir(path)
+  else
+    vim.uv.fs_unlink(path)
+  end
+end
+
+--- Check that a directory contains a valid git clone.
+--- @param path string
+--- @return boolean
+local function valid_clone(path)
+  local stat = vim.uv.fs_stat(path .. "/.git")
+  return stat ~= nil and stat.type == "directory"
+end
+
 --- Check that a file exists and is non-trivial. Safe in any context (pure Lua IO).
 --- @param path string
 --- @return boolean
@@ -31,17 +60,19 @@ function M.clone_repo(info, cache_dir, callback)
   local dest = cache_dir .. "/" .. name
 
   -- Already cloned?
-  local stat = vim.uv.fs_stat(dest)
-  if stat and stat.type == "directory" then
+  if valid_clone(dest) then
     callback(nil, dest)
     return
   end
 
-  -- Dedup: queue behind in-flight clone of same URL
+  -- Dedup: queue behind in-flight clone of same URL (must check BEFORE rm_rf
+  -- to avoid nuking another caller's in-progress clone of the same repo)
   if cloning[url] then
     cloning[url][#cloning[url] + 1] = callback
     return
   end
+
+  rm_rf(dest) -- safe: no in-flight clone for this URL
   cloning[url] = { callback }
 
   local function finish(err, path)
@@ -70,8 +101,7 @@ function M.clone_repo(info, cache_dir, callback)
     try(url, dest, function()
       local fb_name = info.fallback_url:match("([^/]+)$")
       local fb_dest = cache_dir .. "/" .. fb_name
-      local fb_stat = vim.uv.fs_stat(fb_dest)
-      if fb_stat and fb_stat.type == "directory" then
+      if valid_clone(fb_dest) then
         finish(nil, fb_dest)
       else
         try(info.fallback_url, fb_dest)
@@ -98,13 +128,23 @@ function M.download_wasm(lang, dest, callback)
   end)
 end
 
+--- Resolve the grammar root directory. Nukes corrupt clones so next attempt re-clones.
+--- @return string? base  nil if clone is incomplete
+local function resolve_base(repo_path, info)
+  local base = info.location and (repo_path .. "/" .. info.location) or repo_path
+  if vim.uv.fs_stat(base) then return base end
+  rm_rf(repo_path)
+  return nil
+end
+
 --- Build WASM parser via tree-sitter CLI. Requires tree-sitter + wasi-sdk.
 --- @param repo_path string
 --- @param info arborist.ParserInfo
 --- @param dest string Output .wasm path
 --- @param callback fun(err: string?)
 function M.build_wasm(repo_path, info, dest, callback)
-  local base = info.location and (repo_path .. "/" .. info.location) or repo_path
+  local base = resolve_base(repo_path, info)
+  if not base then callback("incomplete clone for " .. (info.location or repo_path)); return end
   vim.system({ "tree-sitter", "build", "--wasm", "-o", dest }, { cwd = base }, function(r)
     if r.code == 0 and valid_file(dest) then
       callback(nil)
@@ -123,7 +163,8 @@ end
 --- @param dest string Output .so path
 --- @param callback fun(err: string?)
 function M.build_native(repo_path, info, dest, callback)
-  local base = info.location and (repo_path .. "/" .. info.location) or repo_path
+  local base = resolve_base(repo_path, info)
+  if not base then callback("incomplete clone for " .. (info.location or repo_path)); return end
 
   local function do_build()
     vim.system({ "tree-sitter", "build", "-o", dest }, { cwd = base }, function(r)
