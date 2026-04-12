@@ -43,12 +43,8 @@ end
 local function find_repo_dir(info, repo_cache)
   local name = info.url:match("([^/]+)$")
   local dir = repo_cache .. "/" .. name
-  local stat = vim.uv.fs_stat(dir)
-  if stat and stat.type == "directory" then return dir end
-  if info.fallback_url then
-    return repo_cache .. "/" .. info.fallback_url:match("([^/]+)$")
-  end
-  return dir
+  if vim.uv.fs_stat(dir) then return dir end
+  return info.fallback_url and repo_cache .. "/" .. info.fallback_url:match("([^/]+)$") or dir
 end
 
 --- Update all installed parsers. Only reinstalls those with new upstream commits.
@@ -106,8 +102,7 @@ function M.due(cadence)
   local y, m, d = data.last_update:match("(%d+)-(%d+)-(%d+)")
   if not y then return false end
   local last = os.time({ year = tonumber(y), month = tonumber(m), day = tonumber(d) })
-  local days = os.difftime(os.time(), last) / 86400
-  return days >= (cadence == "daily" and 1 or 7)
+  return os.difftime(os.time(), last) / 86400 >= (cadence == "daily" and 1 or 7)
 end
 
 return M
