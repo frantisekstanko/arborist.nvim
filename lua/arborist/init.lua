@@ -73,57 +73,41 @@ function M.setup(opts)
     return vim.treesitter.language.get_lang(ft)
   end
 
+  --- Load parser and enable treesitter on all matching buffers.
+  --- @param lang string
+  local function enable_bufs(lang)
+    parser_loaded(lang)
+    for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+      if vim.api.nvim_buf_is_loaded(buf) and detect_lang(buf) == lang then enable(buf) end
+    end
+  end
+
   --- Install a parser for a lang if needed, then enable on all matching buffers.
   --- @param lang string
   local function ensure_parser(lang)
     if install.should_skip(lang) then return end
-    if parser_loaded(lang) then
-      for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-        if vim.api.nvim_buf_is_loaded(buf) and detect_lang(buf) == lang then
-          enable(buf)
-        end
-      end
-      return
-    end
+    if parser_loaded(lang) then enable_bufs(lang); return end
     install.install(lang, function(err)
       if err then return end
-      vim.schedule(function()
-        for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-          if vim.api.nvim_buf_is_loaded(buf) and detect_lang(buf) == lang then
-            parser_loaded(lang)
-            enable(buf)
-          end
-        end
-      end)
+      vim.schedule(function() enable_bufs(lang) end)
     end, { silent = true })
   end
 
   -- Batch install: build the list, then install once registry is ready.
   local function batch_install()
-    local to_install = {}
-    if config.values.install_popular then
-      vim.list_extend(to_install, {
-        "bash", "c", "cpp", "css", "diff", "dockerfile", "go", "html",
-        "ini", "java", "javascript", "json", "latex", "lua", "make",
-        "markdown", "markdown_inline", "python", "regex", "ruby", "rust",
-        "toml", "tsx", "typescript", "vim", "vimdoc", "xml", "yaml",
-      })
-    end
+    local to_install = config.values.install_popular and {
+      "bash", "c", "cpp", "css", "diff", "dockerfile", "go", "html",
+      "ini", "java", "javascript", "json", "latex", "lua", "make",
+      "markdown", "markdown_inline", "python", "regex", "ruby", "rust",
+      "toml", "tsx", "typescript", "vim", "vimdoc", "xml", "yaml",
+    } or {}
     vim.list_extend(to_install, config.values.ensure_installed)
 
     local needed = {}
     for _, lang in ipairs(to_install) do
-      if install.should_skip(lang) then
-        -- skip
-      elseif parser_loaded(lang) then
-        for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-          if vim.api.nvim_buf_is_loaded(buf) and detect_lang(buf) == lang then
-            enable(buf)
-          end
-        end
-      else
-        needed[#needed + 1] = lang
-      end
+      if install.should_skip(lang) then -- skip
+      elseif parser_loaded(lang) then enable_bufs(lang)
+      else needed[#needed + 1] = lang end
     end
 
     if #needed == 0 then return end
@@ -140,15 +124,7 @@ function M.setup(opts)
         log.warn("Failed: " .. table.concat(failed, ", "))
       end
       vim.schedule(function()
-        for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-          if vim.api.nvim_buf_is_loaded(buf) then
-            local blang = detect_lang(buf)
-            if blang then
-              parser_loaded(blang)
-              enable(buf)
-            end
-          end
-        end
+        for _, l in ipairs(needed) do enable_bufs(l) end
       end)
     end, { silent = true })
   end
@@ -212,24 +188,19 @@ end
 
 --- Print installed parser status.
 function M.status()
-  local config = require("arborist.config")
-  local install = require("arborist.install")
-  local l = require("arborist.lock")
-
-  local data = l.read()
-  local wasm = install.wasm_supported
+  local data = require("arborist.lock").read()
+  local wasm = require("arborist.install").wasm_supported
 
   local lines = {
     "arborist:",
     string.format("  WASM: %s | Cadence: %s | Last update: %s",
       wasm == true and "yes" or wasm == false and "no" or "untested",
-      config.values.update_cadence,
+      require("arborist.config").values.update_cadence,
       data.last_update ~= "" and data.last_update or "never"),
     "",
   }
 
-  local langs = {}
-  for lang in pairs(data.parsers) do langs[#langs + 1] = lang end
+  local langs = vim.tbl_keys(data.parsers)
   table.sort(langs)
 
   if #langs == 0 then
@@ -253,9 +224,8 @@ end
 
 --- Update all installed parsers.
 function M.update()
-  local update = require("arborist.update")
-  local install = require("arborist.install")
-  update.update_all(install.install, vim.fn.stdpath("cache") .. "/arborist/repos")
+  require("arborist.update").update_all(
+    require("arborist.install").install, vim.fn.stdpath("cache") .. "/arborist/repos")
 end
 
 return M
