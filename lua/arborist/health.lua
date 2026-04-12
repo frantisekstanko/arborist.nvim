@@ -37,7 +37,7 @@ function M.check()
   else
     vim.health.warn("tree-sitter CLI not found", {
       "Needed to build parsers from source (WASM or native)",
-      "CDN downloads still work without it",
+      "Parsers will fall back to raw cc compilation",
     })
   end
 
