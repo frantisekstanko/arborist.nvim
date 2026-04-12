@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Breaking
+- `setup()` is now required. Auto-setup from `plugin/arborist.lua` has been
+  removed, along with the `vim.g.arborist_loaded` escape hatch. Add
+  `require("arborist").setup()` (with or without options) to your config.
+
 ## 0.3.0 — 2026-04-11
 
 ### Added

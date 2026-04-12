@@ -9,16 +9,12 @@ automatically when you open files. No manual steps, no maintenance.
 vim.pack.add({
   "https://github.com/arborist-ts/arborist.nvim",
 })
+require("arborist").setup()
 ```
 
-Works out of the box with no setup call. To customize:
+Call `setup()` in your config — with or without options. To customize:
 
 ```lua
-vim.pack.add({
-  "https://github.com/arborist-ts/arborist.nvim",
-})
-
-vim.g.arborist_loaded = true -- skip auto-setup, we're configuring manually
 require("arborist").setup({
   update_cadence = "weekly",
   overrides = {

@@ -26,7 +26,7 @@ local function enable(buf)
   end
 end
 
---- Configure and start arborist. Safe to call multiple times (idempotent).
+--- Configure and start arborist. Must be called for arborist to activate.
 --- @param opts? table See arborist.config for available options.
 function M.setup(opts)
   local config = require("arborist.config")

@@ -30,15 +30,15 @@ installs on demand.
 ==============================================================================
 2. SETUP                                                     *arborist-setup*
 
-Works out of the box with no setup call: >lua
+Call `setup()` in your config — with or without options: >lua
 
     vim.pack.add({
       "https://github.com/arborist-ts/arborist.nvim",
     })
+    require("arborist").setup()
 <
 To customize options: >lua
 
-    vim.g.arborist_loaded = true -- skip auto-setup
     require("arborist").setup({
       update_cadence = "weekly",
       overrides = {
@@ -50,7 +50,7 @@ To customize options: >lua
 <
                                                       *arborist.setup()*
 arborist.setup({opts})
-    Configure and start arborist. Safe to call multiple times (idempotent).
+    Configure and start arborist. Must be called for arborist to activate.
     See |arborist-options| for available fields.
 
 ==============================================================================
