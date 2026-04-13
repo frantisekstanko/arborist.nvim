@@ -55,13 +55,53 @@ end
 -- Clone deduplication: concurrent clones to the same URL share one git operation.
 local cloning = {} --- @type table<string, fun(err: string?, path: string?)[]>
 
---- Shallow-clone a repo. Tries primary URL, then fallback_url if present.
---- Concurrent callers for the same URL are queued behind one clone.
+--- Sync a repo clone to a specific git revision. Assumes a valid clone
+--- at `dest`. Handles both shallow and full clones: tries checkout first,
+--- and if the SHA isn't present (shallow clone), unshallows and retries.
+--- @param dest string
+--- @param revision string  commit SHA or tag
+--- @param callback fun(err: string?)
+local function ensure_revision(dest, revision, callback)
+  vim.system({ "git", "-C", dest, "rev-parse", "HEAD" }, {}, function(r_head)
+    if r_head.code == 0 and vim.trim(r_head.stdout or "") == revision then
+      callback(nil)
+      return
+    end
+    -- Try direct checkout first (works if full clone OR SHA is in history).
+    vim.system({ "git", "-C", dest, "checkout", "--quiet", "--detach", revision }, {}, function(r_co)
+      if r_co.code == 0 then
+        callback(nil)
+        return
+      end
+      -- Shallow clone doesn't have the SHA locally — unshallow then retry.
+      vim.system({ "git", "-C", dest, "fetch", "--unshallow", "--quiet" }, {}, function(r_fetch)
+        -- If already a full clone, `--unshallow` errors; fall through either way.
+        local _ = r_fetch
+        vim.system({ "git", "-C", dest, "fetch", "--quiet", "origin", revision }, {}, function(r_fetch2)
+          local _ = r_fetch2
+          vim.system({ "git", "-C", dest, "checkout", "--quiet", "--detach", revision }, {}, function(r_co2)
+            if r_co2.code == 0 then
+              callback(nil)
+            else
+              callback("checkout " .. revision .. " failed in " .. dest .. "\n" .. cmd_output(r_co2))
+            end
+          end)
+        end)
+      end)
+    end)
+  end)
+end
+
+--- Clone a repo. Tries primary URL, then fallback_url if present. If
+--- info.revision is set, clones fully (not shallow) and checks out the
+--- pinned SHA. Concurrent callers for the same URL are queued behind
+--- one clone.
 --- @param info arborist.ParserInfo
 --- @param cache_dir string
 --- @param callback fun(err: string?, path: string?)
 function M.clone_repo(info, cache_dir, callback)
   local url = info.url
+  local revision = info.revision -- optional pin
   local name = url:match("([^/]+)$")
   local dest = cache_dir .. "/" .. name
 
@@ -73,35 +113,54 @@ function M.clone_repo(info, cache_dir, callback)
     return
   end
 
-  -- Already cloned?
+  local function finish_path(path)
+    local cbs = cloning[url] or { callback }
+    cloning[url] = nil
+    for _, cb in ipairs(cbs) do cb(nil, path) end
+  end
+  local function finish_err(err)
+    local cbs = cloning[url] or { callback }
+    cloning[url] = nil
+    for _, cb in ipairs(cbs) do cb(err) end
+  end
+
+  -- Already cloned? Reuse cache. If a revision is pinned, verify HEAD
+  -- matches — fetch/checkout as needed to bring the cache in line.
   if valid_clone(dest) then
-    callback(nil, dest)
+    cloning[url] = cloning[url] or { callback }
+    if revision then
+      ensure_revision(dest, revision, function(err)
+        if err then finish_err(err) else finish_path(dest) end
+      end)
+    else
+      finish_path(dest)
+    end
     return
   end
 
   rm_rf(dest) -- safe: no in-flight clone for this URL
   cloning[url] = { callback }
 
-  local function finish(err, path)
-    local cbs = cloning[url]
-    cloning[url] = nil
-    for _, cb in ipairs(cbs) do cb(err, path) end
-  end
-
   local function try(clone_url, clone_dest, on_fail)
-    vim.system(
-      { "git", "clone", "--depth", "1", "--single-branch", "--quiet", clone_url, clone_dest },
-      {},
-      function(r)
-        if r.code == 0 then
-          finish(nil, clone_dest)
-        elseif on_fail then
-          on_fail()
-        else
-          finish("clone failed: " .. clone_url .. "\n" .. cmd_output(r))
-        end
+    -- Shallow clone by default (fast, small disk). If a revision is
+    -- pinned, clone fully so we can checkout arbitrary SHAs without
+    -- needing to unshallow on every install.
+    local args = revision
+        and { "git", "clone", "--quiet", clone_url, clone_dest }
+      or { "git", "clone", "--depth", "1", "--single-branch", "--quiet", clone_url, clone_dest }
+    vim.system(args, {}, function(r)
+      if r.code ~= 0 then
+        if on_fail then on_fail() else finish_err("clone failed: " .. clone_url .. "\n" .. cmd_output(r)) end
+        return
       end
-    )
+      if revision then
+        ensure_revision(clone_dest, revision, function(err)
+          if err then finish_err(err) else finish_path(clone_dest) end
+        end)
+      else
+        finish_path(clone_dest)
+      end
+    end)
   end
 
   if info.fallback_url then
@@ -109,7 +168,13 @@ function M.clone_repo(info, cache_dir, callback)
       local fb_name = info.fallback_url:match("([^/]+)$")
       local fb_dest = cache_dir .. "/" .. fb_name
       if valid_clone(fb_dest) then
-        finish(nil, fb_dest)
+        if revision then
+          ensure_revision(fb_dest, revision, function(err)
+            if err then finish_err(err) else finish_path(fb_dest) end
+          end)
+        else
+          finish_path(fb_dest)
+        end
       else
         try(info.fallback_url, fb_dest)
       end

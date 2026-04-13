@@ -16,10 +16,18 @@ end
 --- @param buf integer
 local function enable(buf)
   if not vim.api.nvim_buf_is_valid(buf) then return end
+  -- Skip special buffers. DAP REPL (buftype=terminal), dap-ui panes
+  -- (buftype=nofile), DAP prompt inputs (buftype=prompt), quickfix, help,
+  -- etc. legitimately carry filetypes but must not drive parser install
+  -- or indent setup. A live RunInTerminalRequest from nvim-dap sets a
+  -- terminal-channel buffer's filetype; arborist parsing that buffer
+  -- corrupts the terminal and (previously) cascaded query crashes into
+  -- debugger launch failure.
+  if vim.bo[buf].buftype ~= "" then return end
   pcall(vim.treesitter.start, buf)
   local lang = vim.treesitter.language.get_lang(vim.bo[buf].filetype)
   if lang then
-    local q = vim.treesitter.query.get(lang, "indents")
+    local q = require("arborist.query_safe").safe_get(lang, "indents")
     if q and #q.captures > 0 then
       vim.bo[buf].indentexpr = "v:lua.require'arborist.indent'.indentexpr()"
     end
@@ -142,6 +150,7 @@ function M.setup(opts)
   vim.api.nvim_create_autocmd("FileType", {
     group = group,
     callback = function(ev)
+      if vim.bo[ev.buf].buftype ~= "" then return end
       local lang = vim.treesitter.language.get_lang(ev.match)
       if lang then ensure_parser(lang) end
     end,
@@ -152,6 +161,7 @@ function M.setup(opts)
   vim.api.nvim_create_autocmd("BufReadPost", {
     group = group,
     callback = function(ev)
+      if vim.bo[ev.buf].buftype ~= "" then return end
       local lang = detect_lang(ev.buf)
       if lang then ensure_parser(lang) end
     end,

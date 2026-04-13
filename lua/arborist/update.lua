@@ -76,19 +76,28 @@ function M.update_all(install_fn, repo_cache)
 
   for _, lang in ipairs(langs) do
     local info = registry.resolve(lang)
-    local dir = find_repo_dir(info, repo_cache)
-    check_changed(dir, function(changed)
-      if changed then
-        install_fn(lang, function(err)
+    -- Revision-pinned parsers don't participate in the update cadence —
+    -- the pin is the authority. Bump via scripts/sync-upstream-revisions.lua
+    -- and rerun install. Prevents `git reset --hard FETCH_HEAD` in
+    -- check_changed from silently moving off the pin.
+    if info.revision then
+      checked = checked + 1
+      maybe_finish()
+    else
+      local dir = find_repo_dir(info, repo_cache)
+      check_changed(dir, function(changed)
+        if changed then
+          install_fn(lang, function(err)
+            checked = checked + 1
+            if not err then updated = updated + 1 end
+            maybe_finish()
+          end)
+        else
           checked = checked + 1
-          if not err then updated = updated + 1 end
           maybe_finish()
-        end)
-      else
-        checked = checked + 1
-        maybe_finish()
-      end
-    end)
+        end
+      end)
+    end
   end
 end
 

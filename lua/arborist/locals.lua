@@ -33,15 +33,16 @@ local function build(bufnr)
   local ok_parser, parser = pcall(vim.treesitter.get_parser, bufnr)
   if not ok_parser or not parser then return nil end
   local lang = parser:lang()
-  local query = vim.treesitter.query.get(lang, "locals")
+  local qs = require("arborist.query_safe")
+  local query = qs.safe_get(lang, "locals")
   if not query then return { scopes = {}, defs = {} } end
 
-  local trees = parser:parse()
-  if not trees or not trees[1] then return { scopes = {}, defs = {} } end
+  local ok_parse, trees = pcall(parser.parse, parser)
+  if not ok_parse or not trees or not trees[1] then return { scopes = {}, defs = {} } end
   local root = trees[1]:root()
 
   local scopes, defs = {}, {}
-  for id, node in query:iter_captures(root, bufnr, 0, -1) do
+  for id, node in qs.safe_iter_captures(query, lang, "locals", root, bufnr, 0, -1) do
     local cname = query.captures[id]
     if cname == "local.scope" then
       table.insert(scopes, node)

@@ -15,6 +15,7 @@ local config = require("arborist.config")
 --- @class arborist.ParserInfo
 --- @field url string Git repository URL
 --- @field location? string Subdirectory within repo (for mono-repos)
+--- @field revision? string Commit SHA or tag to check out (defaults to repo default branch HEAD)
 --- @field fallback_url? string Secondary URL to try (set by heuristic resolve only)
 
 local M = {}

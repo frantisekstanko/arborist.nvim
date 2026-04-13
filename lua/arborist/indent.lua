@@ -7,16 +7,18 @@ function M.indentexpr()
   local lnum, bufnr = vim.v.lnum, vim.api.nvim_get_current_buf()
   local ok, parser = pcall(vim.treesitter.get_parser, bufnr)
   if not ok or not parser then return -1 end
-  parser:parse({ vim.fn.line("w0") - 1, vim.fn.line("w$") })
+  if not pcall(parser.parse, parser, { vim.fn.line("w0") - 1, vim.fn.line("w$") }) then return -1 end
   local tree = parser:trees()[1]
   if not tree then return -1 end
   local root = tree:root()
-  local query = vim.treesitter.query.get(parser:lang(), "indents")
+  local qs = require("arborist.query_safe")
+  local lang = parser:lang()
+  local query = qs.safe_get(lang, "indents")
   if not query then return -1 end
 
   -- Build node-id -> set-of-capture-names
   local cap = {} ---@type table<integer, table<string, true>>
-  for id, node in query:iter_captures(root, bufnr) do
+  for id, node in qs.safe_iter_captures(query, lang, "indents", root, bufnr) do
     local name = query.captures[id]
     if name:sub(1, 1) ~= "_" then
       local nid = node:id()
