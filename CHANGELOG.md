@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.4.1 — 2026-04-12
+
+### Fixed
+- `No handler for is-not?` errors when opening files (ruby, javascript, etc.)
+  whose queries use the `#is?` / `#is-not?` predicates. The previous
+  registration was a no-op directive; the predicates are now backed by a real
+  locals-scope lookup that mirrors nvim-treesitter's semantics, so highlights
+  guarded by `#is-not? local` resolve correctly instead of erroring or
+  mis-applying.
+
+### Changed
+- `setup()` now prepends the plugin's own directory to `runtimepath` so
+  arborist's curated bundled queries take precedence over stale query files
+  left behind in `~/.local/share/nvim/site/queries/` by prior tree-sitter
+  plugin installs.
+
+### Added
+- `lua/arborist/locals.lua`: minimal per-buffer locals-scope lookup
+  (`find_definition_kind`) used by the new `#is?` / `#is-not?` predicates.
+  Cached by `changedtick`.
+
 ## 0.4.0 — 2026-04-12
 
 ### Breaking
