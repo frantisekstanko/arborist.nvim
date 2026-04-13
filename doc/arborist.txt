@@ -113,10 +113,15 @@ ignore ~
 
                                                      *arborist.overrides*
 overrides ~
-    Type: `table<string, {url: string, location?: string}>`, Default: `{}`
+    Type: `table<string, {url: string, location?: string, revision?: string}>`,
+    Default: `{}`
 
     Custom parser definitions. These take priority over the bundled registry.
     Use `location` for mono-repos where the grammar is in a subdirectory.
+    Use `revision` to pin to a specific commit SHA or tag — the installer
+    will do a full clone and `git checkout --detach` instead of the default
+    shallow clone at HEAD. Pinned overrides are also skipped by the
+    `:ArboristUpdate` cadence so they don't drift.
     >lua
         require("arborist").setup({
           overrides = {
@@ -124,6 +129,10 @@ overrides ~
             apex = {
               url = "https://github.com/aheber/tree-sitter-sfapex",
               location = "apex",
+            },
+            python = {
+              url = "https://github.com/tree-sitter/tree-sitter-python",
+              revision = "710796b8b877a970297106e5bbc8e2afa47f86ec",
             },
           },
         })
@@ -216,6 +225,19 @@ Parser locations are resolved in this order:
   3. Convention-based fallback: tries `tree-sitter-grammars/tree-sitter-{lang}`
      then `tree-sitter/tree-sitter-{lang}` on GitHub
 
+Revision pinning ~
+
+Most entries in the bundled registry are pinned to a specific commit SHA
+(synced from the nvim-treesitter community lockfile). A pinned entry clones
+the repo fully and checks out the pinned revision, so the built parser
+matches the grammar its bundled queries were authored against. Unpinned
+entries fall back to a shallow clone at HEAD.
+
+Pinned parsers are skipped by the |:ArboristUpdate| cadence — a cadence
+that resets to `FETCH_HEAD` would silently drift a parser off its pin.
+Bump a pin manually in the registry (or via
+`scripts/sync-upstream-revisions.lua`) then re-install to advance.
+
 Query priority ~
 
 Query files (.scm) are loaded in standard Neovim priority order:
@@ -224,11 +246,21 @@ Query files (.scm) are loaded in standard Neovim priority order:
   2. Bundled arborist queries (330 languages)
   3. Parser-repo queries (copied during installation)
 
+Malformed query resilience ~
+
+If a `.scm` file fails tree-sitter's static validator (a grammar update can
+invalidate patterns in older queries, or a user's custom query may have a
+syntax error), arborist emits one notification per distinct error and
+falls back to Neovim's default indent for that language. It never cascades
+the error into downstream autocmds.
+
 Auto-detection ~
 
 Arborist listens for |FileType| and |BufReadPost| events. When a buffer's
 filetype maps to a language without an installed parser, installation starts
-automatically in the background.
+automatically in the background. Special buffers (terminal, nofile, prompt,
+quickfix, help) are skipped — arborist only attaches to normal file
+buffers.
 
 ==============================================================================
 8. DATA SOURCES                                       *arborist-data-sources*
@@ -247,6 +279,16 @@ Changes flow upstream first: updates are made in the source repos, then
 synced into arborist.nvim before each release via `scripts/sync-upstream.sh`.
 This keeps the upstream repos canonical and arborist.nvim releases
 self-contained.
+
+Parser revisions are separately synced from nvim-treesitter's `lockfile.json`
+via `scripts/sync-upstream-revisions.lua` so arborist's bundled registry
+tracks the same community-vetted pins used by nvim-treesitter users. Run:
+>sh
+    nvim --headless --clean \
+      -c "luafile scripts/sync-upstream-revisions.lua" -c "qa!"
+<
+The script is idempotent and prints a summary report of added/updated/
+unchanged pins and arborist-only / lockfile-only language differences.
 
 ==============================================================================
 9. REQUIREMENTS                                       *arborist-requirements*

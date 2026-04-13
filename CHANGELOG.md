@@ -2,6 +2,66 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.5.0 — 2026-04-13
+
+Resilience release. Arborist now survives malformed queries, parser-version
+drift, and never runs on buffers it has no business touching. Every shipped
+parser is pinned to a community-vetted revision so bundled queries always
+compile against the grammar they were written for.
+
+### Added
+- **Parser revision pinning.** `registry/parsers.toml` now accepts an
+  optional `revision` field (commit SHA or tag) per entry. The installer
+  does a full clone and `git checkout --detach` when a pin is set, so the
+  built parser matches the grammar the bundled query was authored against.
+  Unpinned entries keep the prior shallow-clone-at-HEAD behavior.
+- **`scripts/sync-upstream-revisions.lua`** — idempotent sync script that
+  reads nvim-treesitter's `lockfile.json` (local or via `curl`) and injects
+  `revision = "<sha>"` into `registry/parsers.toml` for every matching
+  language. Prints a summary report with additions, updates, arborist-only
+  and lockfile-only languages. Re-run whenever the upstream lockfile moves.
+- **`lua/arborist/query_safe.lua`** — defensive wrappers around
+  `vim.treesitter.query.get` and `query:iter_captures`. Branches on
+  nil-return (silent — parser still loading) vs throw (notify once per
+  `(lang, qtype, err)` then degrade gracefully). `reset()` / `reset_all()`
+  invalidate the dedup memory after a fix.
+
+### Fixed
+- **Malformed queries no longer cascade-crash.** Any `.scm` that fails
+  tree-sitter's static validator used to throw straight out of arborist's
+  FileType autocmd into whatever triggered the event — including
+  nvim-dap's integrated-terminal buffer setup, breaking Python debugger
+  launches. Five previously-unguarded call sites are now routed through
+  `query_safe`; a broken query emits one notify and falls back to
+  Neovim's default indent.
+- **Python indent query incompatibility.** Tree-sitter-python 0.25
+  (HEAD) changed ERROR-node child semantics, invalidating a
+  community-inherited pattern (`(ERROR (block (expression_statement
+  (identifier) @_except) @indent.branch))`) that compiles cleanly against
+  the nvim-treesitter-pinned `710796b8`. Ships with 319 revision pins so
+  the bundled queries match the grammar versions they were tested on.
+- **Arborist no longer touches special buffers.** FileType / BufReadPost
+  autocmds and `enable()` early-return when `buftype ~= ""`, skipping DAP
+  REPL (`terminal`), dapui panes (`nofile`), DAP prompt inputs
+  (`prompt`), quickfix, help, and other special buffers that carry
+  filetypes but shouldn't drive parser install or indent setup.
+- **`:ArboristUpdate` no longer clobbers pinned parsers.** Revision-pinned
+  entries are skipped during the cadence-based update pass so
+  `git reset --hard FETCH_HEAD` can't silently move a parser off its pin.
+  Bump a pin via `scripts/sync-upstream-revisions.lua` and re-install.
+
+### Changed
+- **Bundled registry pins 319 parsers** — 312 synced from
+  nvim-treesitter's `lockfile.json` plus 7 manual additions for languages
+  upstream ships under different names (`blueprint`, `fusion`, `ipkg`,
+  `jsonc`, `norg` as new entries; `robots_txt` and `systemverilog` absorb
+  upstream pins for same-repo aliases `robots` and `verilog`). 15
+  arborist-only languages remain unpinned and will continue tracking
+  their repo HEAD — the runtime `query_safe` net catches any query that
+  drifts out of compatibility.
+- **`arborist.ParserInfo`** gains an optional `revision?: string` field
+  alongside `url`, `location`, and `fallback_url`.
+
 ## 0.4.1 — 2026-04-12
 
 ### Fixed
