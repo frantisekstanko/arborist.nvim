@@ -96,12 +96,17 @@ function M.setup(opts)
     end
   end
 
+  local ensuring = {} --- @type table<string, boolean>
+
   --- Install a parser for a lang if needed, then enable on all matching buffers.
   --- @param lang string
   local function ensure_parser(lang)
     if install.should_skip(lang) then return end
     if parser_loaded(lang) then enable_bufs(lang); return end
+    if ensuring[lang] then return end
+    ensuring[lang] = true
     install.install(lang, function(err)
+      ensuring[lang] = nil
       if err then return end
       vim.schedule(function() enable_bufs(lang) end)
     end, { silent = true })
