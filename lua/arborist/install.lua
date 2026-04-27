@@ -155,6 +155,26 @@ local function build_parser(repo_path, lang, info, opts, callback)
   end
 end
 
+--- Expand a lang list to include all transitive requires deps.
+--- Deps precede their dependents; duplicates are removed.
+--- @param langs string[]
+--- @return string[]
+local function expand_required_dependencies(langs)
+  local seen = {}
+  local result = {}
+  local function add(lang)
+    if seen[lang] then return end
+    seen[lang] = true
+    local info = registry.resolve(lang)
+    if info.requires then
+      for _, dep in ipairs(info.requires) do add(dep) end
+    end
+    result[#result + 1] = lang
+  end
+  for _, lang in ipairs(langs) do add(lang) end
+  return result
+end
+
 --- Install multiple parsers. Groups by repo URL — each repo is cloned once,
 --- then parsers sharing that repo are built sequentially from the same clone.
 --- Repo groups run in parallel.
@@ -163,6 +183,8 @@ end
 --- @param opts? {silent?: boolean}
 function M.install_batch(langs, callback, opts)
   opts = opts or {}
+
+  langs = expand_required_dependencies(langs)
 
   -- Skip langs already being installed by another process; atomically claim the rest.
   -- is_installing cleans up stale locks (dead PIDs); mark_installing uses O_EXCL
