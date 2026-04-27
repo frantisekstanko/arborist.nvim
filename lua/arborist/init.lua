@@ -126,6 +126,7 @@ function M.setup(opts)
     for _, lang in ipairs(to_install) do
       if install.should_skip(lang) then -- skip
       elseif parser_loaded(lang) then enable_bufs(lang)
+      elseif install.is_installing(lang) then
       else needed[#needed + 1] = lang end
     end
 
